@@ -3,7 +3,8 @@ import numpy as np
 import random
 import torch
 import torch.utils.data
-
+from praat.praat import PraatAugment, sampler
+from vits_extend.stft import TacotronSTFT
 
 from vits.utils import load_wav_to_torch
 
@@ -21,6 +22,19 @@ class TextAudioSpeakerSet(torch.utils.data.Dataset):
         self.sampling_rate = hparams.sampling_rate
         self.segment_size = hparams.segment_size
         self.hop_length = hparams.hop_length
+        self.use_tp = hparams.use_timbre_perturb
+        self.timbre_perturb = PraatAugment(hparams.sampling_rate)
+        # device = torch.device('cuda:{:d}'.format(0))
+        device = torch.device('cpu')
+        self.stft = TacotronSTFT(filter_length=hparams.filter_length,
+                        hop_length=hparams.hop_length,
+                        win_length=hparams.win_length,
+                        n_mel_channels=hparams.mel_channels,
+                        sampling_rate=hparams.sampling_rate,
+                        mel_fmin=hparams.mel_fmin,
+                        mel_fmax=hparams.mel_fmax,
+                        center=False,
+                        device=device)
         self._filter()
         print(f'----------{len(self.items)}----------')
 
@@ -122,7 +136,16 @@ class TextAudioSpeakerSet(torch.utils.data.Dataset):
         # print(ppg.shape)
         # print(pit.shape)
         # print(spk.shape)
-        return spe, wav, ppg, vec, pit, spk
+        if(self.use_tp):
+            # print('using tp')
+            wav_perturbed = self.timbre_perturb.augment(wav)
+            wav_perturbed = torch.FloatTensor(wav_perturbed.astype(np.float32)).unsqueeze(0)
+        else:
+            wav_perturbed = wav
+
+        mel_perturbed = self.stft.mel_spectrogram(wav_perturbed).squeeze(0)
+        # print(mel_perturbed.shape)
+        return spe, wav, ppg, vec, pit, spk, mel_perturbed.permute(1,0)
 
 
 class TextAudioSpeakerCollate:
@@ -141,6 +164,8 @@ class TextAudioSpeakerCollate:
 
         max_spe_len = max([x[0].size(1) for x in batch])
         max_wav_len = max([x[1].size(1) for x in batch])
+        max_melspe_len = max([x[6].size(1) for x in batch])
+        
         spe_lengths = torch.LongTensor(len(batch))
         wav_lengths = torch.LongTensor(len(batch))
         spe_padded = torch.FloatTensor(
@@ -149,6 +174,9 @@ class TextAudioSpeakerCollate:
         spe_padded.zero_()
         wav_padded.zero_()
 
+        mel_perturbed_padded = torch.FloatTensor(len(batch), batch[0][6].size(0), max_melspe_len)
+        mel_perturbed_padded.zero_()
+        
         max_ppg_len = max([x[2].size(0) for x in batch])
         ppg_lengths = torch.FloatTensor(len(batch))
         ppg_padded = torch.FloatTensor(
@@ -183,6 +211,10 @@ class TextAudioSpeakerCollate:
             pit_padded[i, : pit.size(0)] = pit
 
             spk[i] = row[5]
+
+            mel_perturbed = row[6]
+            mel_perturbed_padded[i, :, : mel_perturbed.size(1)] = mel_perturbed
+            
         # print(ppg_padded.shape)
         # print(ppg_lengths.shape)
         # print(pit_padded.shape)
@@ -201,6 +233,7 @@ class TextAudioSpeakerCollate:
             spe_lengths,
             wav_padded,
             wav_lengths,
+            mel_perturbed_padded
         )
 
 

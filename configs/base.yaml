@@ -26,6 +26,7 @@ data:
   mel_channels: 100
   mel_fmin: 50.0
   mel_fmax: 16000.0
+  use_timbre_perturb: False
 #############################
 vits:
   ppg_dim: 1280

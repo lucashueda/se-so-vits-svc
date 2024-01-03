@@ -9,7 +9,7 @@ from vits import modules
 from vits.utils import f0_to_coarse
 from vits_decoder.generator import Generator
 from vits.modules_grl import SpeakerClassifier
-
+from style_encoder.reference_encoder import ReferenceEncoder
 
 class TextEncoder(nn.Module):
     def __init__(self,
@@ -21,11 +21,16 @@ class TextEncoder(nn.Module):
                  n_heads,
                  n_layers,
                  kernel_size,
-                 p_dropout):
+                 p_dropout,
+                 mel_channels):
         super().__init__()
         self.out_channels = out_channels
         self.pre = nn.Conv1d(in_channels, hidden_channels, kernel_size=5, padding=2)
         self.hub = nn.Conv1d(vec_channels, hidden_channels, kernel_size=5, padding=2)
+
+        ### Adding style encoder
+        self.re = ReferenceEncoder(mel_channels, hidden_channels)
+        ### end style encoder
         self.pit = nn.Embedding(256, hidden_channels)
         self.enc = attentions.Encoder(
             hidden_channels,
@@ -36,7 +41,7 @@ class TextEncoder(nn.Module):
             p_dropout)
         self.proj = nn.Conv1d(hidden_channels, out_channels * 2, 1)
 
-    def forward(self, x, x_lengths, v, f0):
+    def forward(self, x, x_lengths, v, f0, melspe):
         x = torch.transpose(x, 1, -1)  # [b, h, t]
         x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(
             x.dtype
@@ -44,13 +49,16 @@ class TextEncoder(nn.Module):
         x = self.pre(x) * x_mask
         v = torch.transpose(v, 1, -1)  # [b, h, t]
         v = self.hub(v) * x_mask
-        x = x + v + self.pit(f0).transpose(1, 2)
+        st = self.re(melspe)
+        ##PRINT DEBUG
+        # print(st.shape, v.shape, x.shape, self.pit(f0).transpose(1, 2).shape)
+        x = x + v + self.pit(f0).transpose(1, 2) + st.unsqueeze(-1)
+        # print(x.shape)
         x = self.enc(x * x_mask, x_mask)
         stats = self.proj(x) * x_mask
         m, logs = torch.split(stats, self.out_channels, dim=1)
         z = (m + torch.randn_like(m) * torch.exp(logs)) * x_mask
         return z, m, logs, x_mask, x
-
 
 class ResidualCouplingBlock(nn.Module):
     def __init__(
@@ -135,7 +143,6 @@ class PosteriorEncoder(nn.Module):
     def remove_weight_norm(self):
         self.enc.remove_weight_norm()
 
-
 class SynthesizerTrn(nn.Module):
     def __init__(
         self,
@@ -156,6 +163,7 @@ class SynthesizerTrn(nn.Module):
             6,
             3,
             0.1,
+            hp.data.mel_channels
         )
         self.speaker_classifier = SpeakerClassifier(
             hp.vits.hidden_channels,
@@ -180,16 +188,18 @@ class SynthesizerTrn(nn.Module):
         )
         self.dec = Generator(hp=hp)
 
-    def forward(self, ppg, vec, pit, spec, spk, ppg_l, spec_l):
+    def forward(self, ppg, vec, pit, spec, spk, ppg_l, spec_l, mel_perturbed):
         ppg = ppg + torch.randn_like(ppg) * 1  # Perturbation
         vec = vec + torch.randn_like(vec) * 2  # Perturbation
         g = self.emb_g(F.normalize(spk)).unsqueeze(-1)
         z_p, m_p, logs_p, ppg_mask, x = self.enc_p(
-            ppg, ppg_l, vec, f0=f0_to_coarse(pit))
+            ppg, ppg_l, vec, f0=f0_to_coarse(pit), melspe=mel_perturbed)
+        
         z_q, m_q, logs_q, spec_mask = self.enc_q(spec, spec_l, g=g)
 
         z_slice, pit_slice, ids_slice = commons.rand_slice_segments_with_pitch(
             z_q, pit, spec_l, self.segment_size)
+        
         audio = self.dec(spk, z_slice, pit_slice)
 
         # SNAC to flow
@@ -199,15 +209,14 @@ class SynthesizerTrn(nn.Module):
         spk_preds = self.speaker_classifier(x)
         return audio, ids_slice, spec_mask, (z_f, z_r, z_p, m_p, logs_p, z_q, m_q, logs_q, logdet_f, logdet_r), spk_preds
 
-    def infer(self, ppg, vec, pit, spk, ppg_l):
+    def infer(self, ppg, vec, pit, spk, ppg_l, mel_rep):
         ppg = ppg + torch.randn_like(ppg) * 0.0001  # Perturbation
         z_p, m_p, logs_p, ppg_mask, x = self.enc_p(
-            ppg, ppg_l, vec, f0=f0_to_coarse(pit))
+            ppg, ppg_l, vec, f0=f0_to_coarse(pit), melspe= mel_rep)
         z, _ = self.flow(z_p, ppg_mask, g=spk, reverse=True)
         o = self.dec(spk, z * ppg_mask, f0=pit)
         return o
-
-
+    
 class SynthesizerInfer(nn.Module):
     def __init__(
         self,
@@ -227,6 +236,7 @@ class SynthesizerInfer(nn.Module):
             6,
             3,
             0.1,
+            hp.data.mel_channels
         )
         self.flow = ResidualCouplingBlock(
             hp.vits.inter_channels,
@@ -248,9 +258,9 @@ class SynthesizerInfer(nn.Module):
     def source2wav(self, source):
         return self.dec.source2wav(source)
 
-    def inference(self, ppg, vec, pit, spk, ppg_l, source):
+    def inference(self, ppg, vec, pit, spk, ppg_l, source, mel_rep):
         z_p, m_p, logs_p, ppg_mask, x = self.enc_p(
-            ppg, ppg_l, vec, f0=f0_to_coarse(pit))
+            ppg, ppg_l, vec, f0=f0_to_coarse(pit), melspe= mel_rep)
         z, _ = self.flow(z_p, ppg_mask, g=spk, reverse=True)
         o = self.dec.inference(spk, z * ppg_mask, source)
         return o
