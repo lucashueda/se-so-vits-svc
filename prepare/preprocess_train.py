@@ -9,11 +9,11 @@ def print_error(info):
 def map_style_emolj(path):
     if("amused" in path):
         return 0
-    elif("angry" in path):
+    elif("anger" in path):
         return 1
-    elif("disgusted" in path):
+    elif("disgust" in path):
         return 2
-    elif("sleepy" in path):
+    elif("sleepiness" in path):
         return 3
     else: # Neutral both to LJ and EMOVDB
         return 0
