@@ -27,6 +27,8 @@ if __name__ == '__main__':
     assert hp.data.hop_length == 320, \
         'hp.data.hop_length must be equal to 320, got %d' % hp.data.hop_length
 
+    print(f'Training with: \tTimbre perturbation = {hp.data.use_timbre_perturb} \tUse Style Loss = {hp.train.use_style_loss} \t')
+
     args.num_gpus = 0
     torch.manual_seed(hp.train.seed)
     if torch.cuda.is_available():
