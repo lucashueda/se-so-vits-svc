@@ -149,6 +149,9 @@ def train(rank, args, chkpt_path, hp, hp_str):
     stft_criterion = MultiResolutionSTFTLoss(device, eval(hp.mrd.resolutions))
     spkc_criterion = nn.CosineEmbeddingLoss()
 
+    if(hp.train.use_style_loss):
+        stl_criterion = nn.CrossEntropyLoss()
+
     trainloader = create_dataloader_train(hp, args.num_gpus, rank)
 
     for epoch in range(init_epoch, hp.train.epochs):
@@ -167,7 +170,7 @@ def train(rank, args, chkpt_path, hp, hp_str):
         model_g.train()
         model_d.train()
 
-        for ppg, ppg_l, vec, pit, spk, spec, spec_l, audio, audio_l, mel_perturb in loader:
+        for ppg, ppg_l, vec, pit, spk, spec, spec_l, audio, audio_l, mel_perturb, style_id in loader:
 
             ppg = ppg.to(device)
             vec = vec.to(device)
@@ -179,10 +182,11 @@ def train(rank, args, chkpt_path, hp, hp_str):
             spec_l = spec_l.to(device)
             audio_l = audio_l.to(device)
             mel_perturb = mel_perturb.to(device)
+            style_id = style_id.to(device)
 
             # generator
             fake_audio, ids_slice, z_mask, \
-                (z_f, z_r, z_p, m_p, logs_p, z_q, m_q, logs_q, logdet_f, logdet_r), spk_preds = model_g(
+                (z_f, z_r, z_p, m_p, logs_p, z_q, m_q, logs_q, logdet_f, logdet_r), spk_preds, stl_preds = model_g(
                     ppg, vec, pit, spec, spk, ppg_l, spec_l, mel_perturb)
 
             audio = commons.slice_segments(
@@ -190,6 +194,11 @@ def train(rank, args, chkpt_path, hp, hp_str):
             # Spk Loss
             spk_loss = spkc_criterion(spk, spk_preds, torch.Tensor(spk_preds.size(0))
                                 .to(device).fill_(1.0))
+            
+            #Style loss
+            if(hp.train.use_style_loss):
+                stl_loss = stl_criterion(stl_preds, style_id)
+
             # Mel Loss
             mel_fake = stft.mel_spectrogram(fake_audio.squeeze(1))
             mel_real = stft.mel_spectrogram(audio.squeeze(1))
@@ -220,7 +229,10 @@ def train(rank, args, chkpt_path, hp, hp_str):
             loss_kl_r = kl_loss(z_r, logs_p, m_q, logs_q, logdet_r, z_mask) * hp.train.c_kl
 
             # Loss
-            loss_g = score_loss + feat_loss + mel_loss + stft_loss + loss_kl_f + loss_kl_r * 0.5 + spk_loss * 2
+            if(hp.train.use_style_loss):
+                loss_g = score_loss + feat_loss + mel_loss + stft_loss + loss_kl_f + loss_kl_r * 0.5 + spk_loss * 2 + stl_loss
+            else:
+                loss_g = score_loss + feat_loss + mel_loss + stft_loss + loss_kl_f + loss_kl_r * 0.5 + spk_loss * 2
             loss_g.backward()
 
             if ((step + 1) % hp.train.accum_step == 0) or (step + 1 == len(loader)):
@@ -256,12 +268,18 @@ def train(rank, args, chkpt_path, hp, hp_str):
             loss_k = loss_kl_f.item()
             loss_r = loss_kl_r.item()
             loss_i = spk_loss.item()
+            if(hp.train.use_style_loss):
+                loss_st = stl_loss.item()
 
             if rank == 0 and step % hp.log.info_interval == 0:
                 writer.log_training(
                     loss_g, loss_d, loss_m, loss_s, loss_k, loss_r, score_loss.item(), step)
-                logger.info("epoch %d | g %.04f m %.04f s %.04f d %.04f k %.04f r %.04f i %.04f | step %d" % (
-                    epoch, loss_g, loss_m, loss_s, loss_d, loss_k, loss_r, loss_i, step))
+                if(hp.train.use_style_loss):
+                    logger.info("epoch %d | g %.04f m %.04f s %.04f d %.04f k %.04f r %.04f i %.04f st %.04f | step %d" % (
+                        epoch, loss_g, loss_m, loss_s, loss_d, loss_k, loss_r, loss_i, loss_st, step))       
+                else:
+                    logger.info("epoch %d | g %.04f m %.04f s %.04f d %.04f k %.04f r %.04f i %.04f | step %d" % (
+                        epoch, loss_g, loss_m, loss_s, loss_d, loss_k, loss_r, loss_i, step))
 
         if rank == 0 and epoch % hp.log.save_interval == 0:
             save_path = os.path.join(pth_dir, '%s_%04d.pt'

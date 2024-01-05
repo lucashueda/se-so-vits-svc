@@ -13,6 +13,7 @@ train:
   c_kl: 0.2
   port: 8001
   pretrain: "./vits_pretrain/sovits5.0.pretrain.pth"
+  use_style_loss: False
 #############################
 data: 
   training_files: "files/train.txt"
@@ -36,6 +37,7 @@ vits:
   inter_channels: 192
   hidden_channels: 192
   filter_channels: 640
+  num_styles: 0
 #############################
 gen:
   upsample_input: 192

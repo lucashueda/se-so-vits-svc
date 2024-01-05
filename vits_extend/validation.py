@@ -10,7 +10,7 @@ def validate(hp, args, generator, discriminator, valloader, stft, writer, step, 
 
     loader = tqdm.tqdm(valloader, desc='Validation loop')
     mel_loss = 0.0
-    for idx, (ppg, ppg_l, vec, pit, spk, spec, spec_l, audio, audio_l, mel_perturb) in enumerate(loader):
+    for idx, (ppg, ppg_l, vec, pit, spk, spec, spec_l, audio, audio_l, mel_perturb, style_id) in enumerate(loader):
         ppg = ppg.to(device)
         vec = vec.to(device)
         pit = pit.to(device)
@@ -18,6 +18,7 @@ def validate(hp, args, generator, discriminator, valloader, stft, writer, step, 
         ppg_l = ppg_l.to(device)
         audio = audio.to(device)
         mel_perturb = mel_perturb.to(device)
+        style_id = style_id.to(device)
 
         if hasattr(generator, 'module'):
             fake_audio = generator.module.infer(ppg, vec, pit, spk, ppg_l, mel_perturb)[

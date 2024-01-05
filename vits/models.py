@@ -22,7 +22,8 @@ class TextEncoder(nn.Module):
                  n_layers,
                  kernel_size,
                  p_dropout,
-                 mel_channels):
+                 mel_channels,
+                 num_styles):
         super().__init__()
         self.out_channels = out_channels
         self.pre = nn.Conv1d(in_channels, hidden_channels, kernel_size=5, padding=2)
@@ -41,6 +42,13 @@ class TextEncoder(nn.Module):
             p_dropout)
         self.proj = nn.Conv1d(hidden_channels, out_channels * 2, 1)
 
+
+        if(num_styles > 0):
+            self.use_style_guided = True
+            self.classifier_layer = nn.Linear(hidden_channels, num_styles)
+        else:
+            self.use_style_guided = False
+
     def forward(self, x, x_lengths, v, f0, melspe):
         x = torch.transpose(x, 1, -1)  # [b, h, t]
         x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(
@@ -50,6 +58,12 @@ class TextEncoder(nn.Module):
         v = torch.transpose(v, 1, -1)  # [b, h, t]
         v = self.hub(v) * x_mask
         st = self.re(melspe)
+
+        if(self.use_style_guided):
+            stl_preds = self.classifier_layer(st)
+        else:
+            stl_preds = None
+
         ##PRINT DEBUG
         # print(st.shape, v.shape, x.shape, self.pit(f0).transpose(1, 2).shape)
         x = x + v + self.pit(f0).transpose(1, 2) + st.unsqueeze(-1)
@@ -58,7 +72,7 @@ class TextEncoder(nn.Module):
         stats = self.proj(x) * x_mask
         m, logs = torch.split(stats, self.out_channels, dim=1)
         z = (m + torch.randn_like(m) * torch.exp(logs)) * x_mask
-        return z, m, logs, x_mask, x
+        return z, m, logs, x_mask, x, stl_preds
 
 class ResidualCouplingBlock(nn.Module):
     def __init__(
@@ -163,8 +177,10 @@ class SynthesizerTrn(nn.Module):
             6,
             3,
             0.1,
-            hp.data.mel_channels
+            hp.data.mel_channels,
+            hp.vits.num_styles
         )
+
         self.speaker_classifier = SpeakerClassifier(
             hp.vits.hidden_channels,
             hp.vits.spk_dim,
@@ -192,7 +208,7 @@ class SynthesizerTrn(nn.Module):
         ppg = ppg + torch.randn_like(ppg) * 1  # Perturbation
         vec = vec + torch.randn_like(vec) * 2  # Perturbation
         g = self.emb_g(F.normalize(spk)).unsqueeze(-1)
-        z_p, m_p, logs_p, ppg_mask, x = self.enc_p(
+        z_p, m_p, logs_p, ppg_mask, x, stl_preds = self.enc_p(
             ppg, ppg_l, vec, f0=f0_to_coarse(pit), melspe=mel_perturbed)
         
         z_q, m_q, logs_q, spec_mask = self.enc_q(spec, spec_l, g=g)
@@ -207,11 +223,11 @@ class SynthesizerTrn(nn.Module):
         z_r, logdet_r = self.flow(z_p, spec_mask, g=spk, reverse=True)
         # speaker
         spk_preds = self.speaker_classifier(x)
-        return audio, ids_slice, spec_mask, (z_f, z_r, z_p, m_p, logs_p, z_q, m_q, logs_q, logdet_f, logdet_r), spk_preds
+        return audio, ids_slice, spec_mask, (z_f, z_r, z_p, m_p, logs_p, z_q, m_q, logs_q, logdet_f, logdet_r), spk_preds, stl_preds
 
     def infer(self, ppg, vec, pit, spk, ppg_l, mel_rep):
         ppg = ppg + torch.randn_like(ppg) * 0.0001  # Perturbation
-        z_p, m_p, logs_p, ppg_mask, x = self.enc_p(
+        z_p, m_p, logs_p, ppg_mask, x, stl_preds = self.enc_p(
             ppg, ppg_l, vec, f0=f0_to_coarse(pit), melspe= mel_rep)
         z, _ = self.flow(z_p, ppg_mask, g=spk, reverse=True)
         o = self.dec(spk, z * ppg_mask, f0=pit)
@@ -236,7 +252,8 @@ class SynthesizerInfer(nn.Module):
             6,
             3,
             0.1,
-            hp.data.mel_channels
+            hp.data.mel_channels,
+            hp.vits.num_styles
         )
         self.flow = ResidualCouplingBlock(
             hp.vits.inter_channels,
@@ -259,7 +276,7 @@ class SynthesizerInfer(nn.Module):
         return self.dec.source2wav(source)
 
     def inference(self, ppg, vec, pit, spk, ppg_l, source, mel_rep):
-        z_p, m_p, logs_p, ppg_mask, x = self.enc_p(
+        z_p, m_p, logs_p, ppg_mask, x, stl_preds = self.enc_p(
             ppg, ppg_l, vec, f0=f0_to_coarse(pit), melspe= mel_rep)
         z, _ = self.flow(z_p, ppg_mask, g=spk, reverse=True)
         o = self.dec.inference(spk, z * ppg_mask, source)

@@ -43,7 +43,7 @@ class TextAudioSpeakerSet(torch.utils.data.Dataset):
         items_new = []
         items_min = int(self.segment_size / self.hop_length * 4)  # 1 S
         items_max = int(self.segment_size / self.hop_length * 16)  # 4 S
-        for wavpath, spec, pitch, vec, ppg, spk in self.items:
+        for wavpath, spec, pitch, vec, ppg, spk, style_id in self.items:
             if not os.path.isfile(wavpath):
                 continue
             if not os.path.isfile(spec):
@@ -62,7 +62,7 @@ class TextAudioSpeakerSet(torch.utils.data.Dataset):
                 continue
             if (usel >= items_max):
                 usel = items_max
-            items_new.append([wavpath, spec, pitch, vec, ppg, spk, usel])
+            items_new.append([wavpath, spec, pitch, vec, ppg, spk, usel, style_id])
             lengths.append(usel)
         self.items = items_new
         self.lengths = lengths
@@ -90,6 +90,7 @@ class TextAudioSpeakerSet(torch.utils.data.Dataset):
         ppg = item[4]
         spk = item[5]
         use = item[6]
+        style_id = item[7]
 
         wav = self.read_wav(wav)
         spe = torch.load(spe)
@@ -105,6 +106,7 @@ class TextAudioSpeakerSet(torch.utils.data.Dataset):
         vec = torch.FloatTensor(vec)
         ppg = torch.FloatTensor(ppg)
         spk = torch.FloatTensor(spk)
+        style_id = torch.LongTensor(style_id)
 
         len_pit = pit.size()[0]
         len_vec = vec.size()[0] - 2 # for safe
@@ -145,7 +147,7 @@ class TextAudioSpeakerSet(torch.utils.data.Dataset):
 
         mel_perturbed = self.stft.mel_spectrogram(wav_perturbed).squeeze(0)
         # print(mel_perturbed.shape)
-        return spe, wav, ppg, vec, pit, spk, mel_perturbed.permute(1,0)
+        return spe, wav, ppg, vec, pit, spk, mel_perturbed.permute(1,0), style_id
 
 
 class TextAudioSpeakerCollate:
@@ -188,6 +190,7 @@ class TextAudioSpeakerCollate:
         vec_padded.zero_()
         pit_padded.zero_()
         spk = torch.FloatTensor(len(batch), batch[0][5].size(0))
+        style_id = torch.LongTensor(len(batch), batch[0,7].size(0))
 
         for i in range(len(ids_sorted_decreasing)):
             row = batch[ids_sorted_decreasing[i]]
@@ -211,6 +214,8 @@ class TextAudioSpeakerCollate:
             pit_padded[i, : pit.size(0)] = pit
 
             spk[i] = row[5]
+            
+            style_id[i] = row[7]
 
             mel_perturbed = row[6]
             mel_perturbed_padded[i, :, : mel_perturbed.size(1)] = mel_perturbed
@@ -233,7 +238,8 @@ class TextAudioSpeakerCollate:
             spe_lengths,
             wav_padded,
             wav_lengths,
-            mel_perturbed_padded
+            mel_perturbed_padded,
+            style_id
         )
 
 
