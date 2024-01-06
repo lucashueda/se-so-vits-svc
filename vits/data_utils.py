@@ -218,6 +218,7 @@ class TextAudioSpeakerCollate:
             style_id[i] = row[7]
 
             mel_perturbed = row[6]
+            print(mel_perturbed_padded.shape, mel_perturbed.shape)
             mel_perturbed_padded[i, :, : mel_perturbed.size(1)] = mel_perturbed
             
         # print(ppg_padded.shape)
