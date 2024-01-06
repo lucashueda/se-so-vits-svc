@@ -106,8 +106,9 @@ class TextAudioSpeakerSet(torch.utils.data.Dataset):
         vec = torch.FloatTensor(vec)
         ppg = torch.FloatTensor(ppg)
         spk = torch.FloatTensor(spk)
+        print(style_id)
         style_id = torch.LongTensor(style_id)
-
+        print(style_id)
         len_pit = pit.size()[0]
         len_vec = vec.size()[0] - 2 # for safe
         len_ppg = ppg.size()[0] - 2 # for safe
