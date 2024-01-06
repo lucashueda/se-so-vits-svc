@@ -197,8 +197,8 @@ def train(rank, args, chkpt_path, hp, hp_str):
             
             #Style loss
             if(hp.train.use_style_loss):
-                print(stl_preds.shape, style_id.shape, style_id, style_id.squeeze(-1))
-                stl_loss = stl_criterion(stl_preds, style_id)
+                # print(stl_preds.shape, style_id.shape, style_id, style_id.squeeze(-1))
+                stl_loss = stl_criterion(stl_preds, style_id.squeeze(-1))
 
             # Mel Loss
             mel_fake = stft.mel_spectrogram(fake_audio.squeeze(1))
