@@ -196,6 +196,7 @@ class TextAudioSpeakerCollate:
             row = batch[ids_sorted_decreasing[i]]
 
             spe = row[0]
+            print('SPEC SHAPES:', spe_padded.shape, spe.shape)
             spe_padded[i, :, : spe.size(1)] = spe
             spe_lengths[i] = spe.size(1)
 
