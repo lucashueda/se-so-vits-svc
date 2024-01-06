@@ -147,7 +147,7 @@ class TextAudioSpeakerSet(torch.utils.data.Dataset):
 
         mel_perturbed = self.stft.mel_spectrogram(wav_perturbed).squeeze(0)
         # print(mel_perturbed.shape)
-        return spe, wav, ppg, vec, pit, spk, mel_perturbed.permute(1,0), style_id
+        return spe, wav, ppg, vec, pit, spk, mel_perturbed, style_id
 
 
 class TextAudioSpeakerCollate:
