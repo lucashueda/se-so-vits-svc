@@ -71,7 +71,7 @@ if __name__ == "__main__":
                     styles.append(style_id)
 
     # Printing styles
-    print("In total we have these styles value counts: ", pd.DataFrame('styles': styles)['styles'].value_counts())
+    print("In total we have these styles value counts: ", pd.DataFrame({'styles': styles})['styles'].value_counts())
 
     random.shuffle(all_items)
     valids = all_items[:10]
