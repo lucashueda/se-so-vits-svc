@@ -37,7 +37,7 @@ vits:
   inter_channels: 192
   hidden_channels: 192
   filter_channels: 640
-  num_styles: 0
+  num_styles: 5
 #############################
 gen:
   upsample_input: 192
