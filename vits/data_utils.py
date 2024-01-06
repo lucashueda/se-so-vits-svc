@@ -216,7 +216,7 @@ class TextAudioSpeakerCollate:
 
             spk[i] = row[5]
             
-            print(style_id.shape, row[7].shape)
+            print(style_id.shape, row[7].shape, row[7])
             style_id[i] = row[7]
 
             mel_perturbed = row[6]
