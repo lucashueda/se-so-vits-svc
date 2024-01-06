@@ -78,6 +78,7 @@ class TacotronSTFT(torch.nn.Module):
         -------
         mel_output: torch.FloatTensor of shape (B, n_mel_channels, T)
         """
+        y = torch.clamp(y, min=-1, max = 1)
         assert(torch.min(y.data) >= -1)
         assert(torch.max(y.data) <= 1)
 
