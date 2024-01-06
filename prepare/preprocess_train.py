@@ -16,7 +16,7 @@ def map_style_emolj(path):
     elif("sleepiness" in path):
         return 3
     else: # Neutral both to LJ and EMOVDB
-        return 0
+        return 4
 
 IndexBySinger = False
 if __name__ == "__main__":
