@@ -196,7 +196,7 @@ class TextAudioSpeakerCollate:
             row = batch[ids_sorted_decreasing[i]]
 
             spe = row[0]
-            print('SPEC SHAPES:', spe_padded.shape, spe.shape)
+            # print('SPEC SHAPES:', spe_padded.shape, spe.shape)
             spe_padded[i, :, : spe.size(1)] = spe
             spe_lengths[i] = spe.size(1)
 
@@ -216,10 +216,11 @@ class TextAudioSpeakerCollate:
 
             spk[i] = row[5]
             
+            print(style_id.shape, row[7].shape)
             style_id[i] = row[7]
 
             mel_perturbed = row[6]
-            print(mel_perturbed_padded.shape, mel_perturbed.shape)
+            # print(mel_perturbed_padded.shape, mel_perturbed.shape)
             mel_perturbed_padded[i, :, : mel_perturbed.size(1)] = mel_perturbed
             
         # print(ppg_padded.shape)
