@@ -62,7 +62,7 @@ class TextAudioSpeakerSet(torch.utils.data.Dataset):
                 continue
             if (usel >= items_max):
                 usel = items_max
-            items_new.append([wavpath, spec, pitch, vec, ppg, spk, usel, style_id])
+            items_new.append([wavpath, spec, pitch, vec, ppg, spk, usel, int(style_id)])
             lengths.append(usel)
         self.items = items_new
         self.lengths = lengths
