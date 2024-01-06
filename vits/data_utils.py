@@ -190,7 +190,7 @@ class TextAudioSpeakerCollate:
         vec_padded.zero_()
         pit_padded.zero_()
         spk = torch.FloatTensor(len(batch), batch[0][5].size(0))
-        style_id = torch.LongTensor(len(batch), batch[0,7].size(0))
+        style_id = torch.LongTensor(len(batch), batch[0][7].size(0))
 
         for i in range(len(ids_sorted_decreasing)):
             row = batch[ids_sorted_decreasing[i]]
