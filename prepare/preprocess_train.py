@@ -1,6 +1,7 @@
 import os
 import random
 import pandas as pd
+import argparse
 
 def print_error(info):
     print(f"\033[31m File isn't existed: {info}\033[0m")
@@ -18,8 +19,26 @@ def map_style_emolj(path):
     else: # Neutral both to LJ and EMOVDB
         return 4
 
+## HARD CODED YET
+def map_style_cpqd(path):
+    if("eps_animado" in path):
+        return 0
+    elif("eps_rispido" in path):
+        return 1
+    elif("eps_acolhedor" in path):
+        return 2
+    else: # Neutral for all others
+        return 3
+
 IndexBySinger = False
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-m", "--map", help="Mapping function", dest="map", required=True)
+
+    args = parser.parse_args()
+    print(f'Using mapping = {args.map}')
+
     os.makedirs("./files/", exist_ok=True)
 
     rootPath = "./data_svc/waves-32k/"
@@ -44,7 +63,12 @@ if __name__ == "__main__":
                 path_hubert = f"./data_svc/hubert/{spks}/{file}.vec.npy"
                 path_whisper = f"./data_svc/whisper/{spks}/{file}.ppg.npy"
 
-                style_id = map_style_emolj(path_wave)
+                if(args.map == 'emolj'):
+                    style_id = map_style_emolj(path_wave)
+                elif(args.map == 'cpqd'):
+                    style_id = map_style_cpqd(path_wave)
+                else:
+                    print('ERROR use an valid argument!')
 
                 has_error = 0
                 if not os.path.isfile(path_spk):
