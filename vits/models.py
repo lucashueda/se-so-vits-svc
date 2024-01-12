@@ -49,7 +49,7 @@ class TextEncoder(nn.Module):
         else:
             self.use_style_guided = False
 
-    def forward(self, x, x_lengths, v, f0, melspe):
+    def forward(self, x, x_lengths, v, f0, melspe, stl_rep = None):
         x = torch.transpose(x, 1, -1)  # [b, h, t]
         x_mask = torch.unsqueeze(commons.sequence_mask(x_lengths, x.size(2)), 1).to(
             x.dtype
@@ -57,7 +57,10 @@ class TextEncoder(nn.Module):
         x = self.pre(x) * x_mask
         v = torch.transpose(v, 1, -1)  # [b, h, t]
         v = self.hub(v) * x_mask
-        st = self.re(melspe)
+        if(stl_rep is None):
+            st = self.re(melspe)
+        else:
+            st = stl_rep
 
         if(self.use_style_guided):
             stl_preds = self.classifier_layer(st)
@@ -225,10 +228,10 @@ class SynthesizerTrn(nn.Module):
         spk_preds = self.speaker_classifier(x)
         return audio, ids_slice, spec_mask, (z_f, z_r, z_p, m_p, logs_p, z_q, m_q, logs_q, logdet_f, logdet_r), spk_preds, stl_preds
 
-    def infer(self, ppg, vec, pit, spk, ppg_l, mel_rep):
+    def infer(self, ppg, vec, pit, spk, ppg_l, mel_rep, stl_rep=None):
         ppg = ppg + torch.randn_like(ppg) * 0.0001  # Perturbation
         z_p, m_p, logs_p, ppg_mask, x, stl_preds = self.enc_p(
-            ppg, ppg_l, vec, f0=f0_to_coarse(pit), melspe= mel_rep)
+            ppg, ppg_l, vec, f0=f0_to_coarse(pit), melspe= mel_rep, stl_rep = stl_rep)
         z, _ = self.flow(z_p, ppg_mask, g=spk, reverse=True)
         o = self.dec(spk, z * ppg_mask, f0=pit)
         return o
@@ -275,9 +278,9 @@ class SynthesizerInfer(nn.Module):
     def source2wav(self, source):
         return self.dec.source2wav(source)
 
-    def inference(self, ppg, vec, pit, spk, ppg_l, source, mel_rep):
+    def inference(self, ppg, vec, pit, spk, ppg_l, source, mel_rep, stl_rep = None):
         z_p, m_p, logs_p, ppg_mask, x, stl_preds = self.enc_p(
-            ppg, ppg_l, vec, f0=f0_to_coarse(pit), melspe= mel_rep)
+            ppg, ppg_l, vec, f0=f0_to_coarse(pit), melspe= mel_rep, stl_rep = stl_rep)
         z, _ = self.flow(z_p, ppg_mask, g=spk, reverse=True)
         o = self.dec.inference(spk, z * ppg_mask, source)
         return o
