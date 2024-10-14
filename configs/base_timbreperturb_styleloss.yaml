@@ -37,7 +37,9 @@ vits:
   inter_channels: 192
   hidden_channels: 192
   filter_channels: 640
-  num_styles: 5
+  num_styles: 4
+  style_emb_dim: 384
+  style_encoder_path: False
 #############################
 gen:
   upsample_input: 192
@@ -66,7 +68,7 @@ log:
   num_audio: 6
   pth_dir: 'chkpt'
   log_dir: 'logs'
-  keep_ckpts: 0
+  keep_ckpts: 3
 #############################
 dist_config:
   dist_backend: "nccl"

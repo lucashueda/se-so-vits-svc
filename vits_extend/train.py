@@ -22,6 +22,11 @@ from vits.losses import kl_loss
 from vits.commons import clip_grad_value_
 
 
+def set_batchnorm_eval(m):
+    classname = m.__class__.__name__
+    if classname.find('BatchNorm') != -1:
+        m.eval()
+
 def load_part(model, saved_state_dict):
     if hasattr(model, 'module'):
         state_dict = model.module.state_dict()
@@ -135,6 +140,27 @@ def train(rank, args, chkpt_path, hp, hp_str):
         if rank == 0:
             logger.info("Starting new training run.")
 
+    if(hp.vits.style_encoder_path):
+        try:
+            checkpoint = torch.load(hp.vits.style_encoder_path)
+#             print(checkpoint.keys())
+#             print(model_g.re.state_dict().keys())
+            new_key = 'layer.'
+            new_checkpoint = {}
+            for key, value in checkpoint.items():
+#                 nova_chave = f"{new_key}{key.split('.', 1)[1]}"
+#                 print('.'.join(key.split('.')[1:]))
+                nova_chave = '.'.join(key.split('.')[1:])
+                if nova_chave in model_g.re.state_dict().keys():
+                    # Substituir a primeira parte do nome da chave
+                    new_checkpoint[nova_chave] = value
+
+            model_g.re.load_state_dict(new_checkpoint)
+            
+            print('Style encoder restored from: ', hp.vits.style_encoder_path)
+        except:
+            print("It was not possible to load pre trained style encoder")
+            
     if args.num_gpus > 1:
         model_g = DistributedDataParallel(model_g, device_ids=[rank])
         model_d = DistributedDataParallel(model_d, device_ids=[rank])
@@ -170,6 +196,12 @@ def train(rank, args, chkpt_path, hp, hp_str):
         model_g.train()
         model_d.train()
 
+        #Freezing style encoder params
+        for param in model_g.re.parameters():
+            param.requires_grad = False
+            param.grad = None
+        model_g.re.apply(set_batchnorm_eval)
+                  
         for ppg, ppg_l, vec, pit, spk, spec, spec_l, audio, audio_l, mel_perturb, style_id in loader:
 
             ppg = ppg.to(device)
@@ -199,6 +231,8 @@ def train(rank, args, chkpt_path, hp, hp_str):
             if(hp.train.use_style_loss):
                 # print(stl_preds.shape, style_id.shape, style_id, style_id.squeeze(-1))
                 stl_loss = stl_criterion(stl_preds, style_id.squeeze(-1))
+            else:
+                stl_loss = 0
 
             # Mel Loss
             mel_fake = stft.mel_spectrogram(fake_audio.squeeze(1))
@@ -235,11 +269,30 @@ def train(rank, args, chkpt_path, hp, hp_str):
             else:
                 loss_g = score_loss + feat_loss + mel_loss + stft_loss + loss_kl_f + loss_kl_r * 0.5 + spk_loss * 2
             loss_g.backward()
-
+#             print(loss_g)
             if ((step + 1) % hp.train.accum_step == 0) or (step + 1 == len(loader)):
                 # accumulate gradients for accum steps
-                for param in model_g.parameters():
-                    param.grad /= hp.train.accum_step
+                kk = 0
+                for name, param in model_g.named_parameters():
+                    # Use torch.isnan para verificar NaNs
+#                     nan_mask = torch.isnan(param)
+
+                    # Verifique se há algum NaN no tensor
+#                     contains_nan = nan_mask.any().item()
+                    
+#                     print(contains_nan)
+
+#                     print(param)
+                    try:
+                        param.grad /= hp.train.accum_step
+#                     
+                    except:
+                        
+#                         print(param.grad)
+                        # Here stands for freezed parameters
+#print(kk)
+                        kk+=1
+                
                 clip_grad_value_(model_g.parameters(),  None)
                 # update model
                 optim_g.step()

@@ -151,7 +151,14 @@ class WN(torch.nn.Module):
                 gin_channels, 2 * hidden_channels * n_layers, 1
             )
             self.cond_layer = torch.nn.utils.weight_norm(cond_layer, name="weight")
+            
+            cond_layer2 = torch.nn.Conv1d(
+                gin_channels, 2 * hidden_channels * n_layers, 1
+            )
+            self.cond_layer2 = torch.nn.utils.weight_norm(cond_layer2, name="weight")
 
+            
+            
         for i in range(n_layers):
             dilation = dilation_rate**i
             padding = int((kernel_size * dilation - dilation) / 2)
@@ -175,12 +182,17 @@ class WN(torch.nn.Module):
             res_skip_layer = torch.nn.utils.weight_norm(res_skip_layer, name="weight")
             self.res_skip_layers.append(res_skip_layer)
 
-    def forward(self, x, x_mask, g=None, **kwargs):
+    def forward(self, x, x_mask, g=None, s = None, **kwargs):
         output = torch.zeros_like(x)
         n_channels_tensor = torch.IntTensor([self.hidden_channels])
 
         if g is not None:
             g = self.cond_layer(g)
+            
+        if s is not None:
+            s = self.cond_layer2(s)
+            
+            g = g + s
 
         for i in range(self.n_layers):
             x_in = self.in_layers[i](x)
@@ -248,6 +260,86 @@ class ElementwiseAffine(nn.Module):
 
 
 class ResidualCouplingLayer(nn.Module):
+    def __init__(
+        self,
+        channels,
+        hidden_channels,
+        kernel_size,
+        dilation_rate,
+        n_layers,
+        p_dropout=0,
+        gin_channels=0,
+        mean_only=False,
+    ):
+        assert channels % 2 == 0, "channels should be divisible by 2"
+        super().__init__()
+        self.channels = channels
+        self.hidden_channels = hidden_channels
+        self.kernel_size = kernel_size
+        self.dilation_rate = dilation_rate
+        self.n_layers = n_layers
+        self.half_channels = channels // 2
+        self.mean_only = mean_only
+
+        self.pre = nn.Conv1d(self.half_channels, hidden_channels, 1)
+        # no use gin_channels
+        self.enc = WN(
+            hidden_channels,
+            kernel_size,
+            dilation_rate,
+            n_layers,
+            p_dropout=p_dropout,
+        )
+        self.post = nn.Conv1d(
+            hidden_channels, self.half_channels * (2 - mean_only), 1)
+        self.post.weight.data.zero_()
+        self.post.bias.data.zero_()
+        # SNAC Speaker-normalized Affine Coupling Layer
+        self.snac = nn.Conv1d(gin_channels, 2 * self.half_channels, 1)
+        self.snac2 = nn.Conv1d(gin_channels, 2*self.half_channels, 1)
+
+    def forward(self, x, x_mask, g=None, s = None, reverse=False):
+        speaker = self.snac(g.unsqueeze(-1))
+        style = self.snac2(s)
+        speaker = speaker + style
+        speaker_m, speaker_v = speaker.chunk(2, dim=1)  # (B, half_channels, 1)
+        x0, x1 = torch.split(x, [self.half_channels] * 2, 1)
+        # x0 norm
+        x0_norm = (x0 - speaker_m) * torch.exp(-speaker_v) * x_mask
+        h = self.pre(x0_norm) * x_mask
+        # don't use global condition
+        h = self.enc(h, x_mask)
+        stats = self.post(h) * x_mask
+        if not self.mean_only:
+            m, logs = torch.split(stats, [self.half_channels] * 2, 1)
+        else:
+            m = stats
+            logs = torch.zeros_like(m)
+
+        if not reverse:
+            # x1 norm before affine xform
+            x1_norm = (x1 - speaker_m) * torch.exp(-speaker_v) * x_mask
+            x1 = (m + x1_norm * torch.exp(logs)) * x_mask
+            x = torch.cat([x0, x1], 1)
+            # speaker var to logdet
+            logdet = torch.sum(logs * x_mask, [1, 2]) - torch.sum(
+                speaker_v.expand(-1, -1, logs.size(-1)) * x_mask, [1, 2])
+            return x, logdet
+        else:
+            x1 = (x1 - m) * torch.exp(-logs) * x_mask
+            # x1 denorm before output
+            x1 = (speaker_m + x1 * torch.exp(speaker_v)) * x_mask
+            x = torch.cat([x0, x1], 1)
+            # speaker var to logdet
+            logdet = torch.sum(-logs * x_mask, [1, 2]) + torch.sum(
+                speaker_v.expand(-1, -1, logs.size(-1)) * x_mask, [1, 2])
+            return x, logdet
+
+    def remove_weight_norm(self):
+        self.enc.remove_weight_norm()
+
+        
+class ResidualCouplingLayer_old(nn.Module):
     def __init__(
         self,
         channels,

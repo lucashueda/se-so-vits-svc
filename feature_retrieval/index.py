@@ -116,7 +116,7 @@ class FaissIVFTrainableFeatureIndex(FaissFeatureIndex[IndexIVF]):
     def _batch_count(self, feature_matrix: NumpyArray) -> int:
         return math.ceil(feature_matrix.shape[0] / self._batch_size)
 
-    def _split_matrix_by_batch(self, feature_matrix: NumpyArray) -> list[NumpyArray]:
+    def _split_matrix_by_batch(self, feature_matrix: NumpyArray):
         return np.array_split(feature_matrix, indices_or_sections=self._batch_count(feature_matrix), axis=0)
 
     def _train_index(self, train_feature_matrix: NumpyArray) -> None:

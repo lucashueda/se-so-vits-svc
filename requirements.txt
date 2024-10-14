@@ -8,10 +8,10 @@ tensorboard
 transformers
 tqdm
 librosa
-omegaconf
-gradio==3.36.1
-ruamel.yaml
-resampy
-numpy==1.24
+#omegaconf
+#gradio==3.36.1
+#ruamel.yaml
+#resampy
+numpy
 chardet
 faiss-cpu==1.7.4
